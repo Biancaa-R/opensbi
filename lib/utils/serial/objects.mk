@@ -25,6 +25,9 @@ libsbiutils-objs-$(CONFIG_FDT_SERIAL_RENESAS_SCIF) += serial/fdt_serial_renesas_
 carray-fdt_serial_drivers-$(CONFIG_FDT_SERIAL_SHAKTI) += fdt_serial_shakti
 libsbiutils-objs-$(CONFIG_FDT_SERIAL_SHAKTI) += serial/fdt_serial_shakti.o
 
+carray-fdt_serial_drivers-$(CONFIG_FDT_SERIAL_MINDGROVE) += fdt_serial_mindgrove
+libsbiutils-objs-$(CONFIG_FDT_SERIAL_MINDGROVE) += serial/fdt_serial_mindgrove.o
+
 carray-fdt_serial_drivers-$(CONFIG_FDT_SERIAL_SIFIVE) += fdt_serial_sifive
 libsbiutils-objs-$(CONFIG_FDT_SERIAL_SIFIVE) += serial/fdt_serial_sifive.o
 
@@ -43,6 +46,7 @@ libsbiutils-objs-$(CONFIG_SERIAL_RENESAS_SCIF) += serial/renesas_scif.o
 libsbiutils-objs-$(CONFIG_SERIAL_SHAKTI) += serial/shakti-uart.o
 libsbiutils-objs-$(CONFIG_SERIAL_SIFIVE) += serial/sifive-uart.o
 libsbiutils-objs-$(CONFIG_SERIAL_LITEX) += serial/litex-uart.o
+libsbiutils-objs-$(CONFIG_SERIAL_MINDGROVE) += serial/mindgrove-uart.o
 libsbiutils-objs-$(CONFIG_SERIAL_UART8250) += serial/uart8250.o
 libsbiutils-objs-$(CONFIG_SERIAL_XILINX_UARTLITE) += serial/xlnx-uartlite.o
 libsbiutils-objs-$(CONFIG_SERIAL_SEMIHOSTING) += serial/semihosting.o

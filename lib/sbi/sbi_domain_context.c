@@ -18,6 +18,21 @@
 #include <sbi/sbi_platform.h>
 #include <sbi/sbi_trap.h>
 
+
+
+#include <sbi/riscv_barrier.h>
+#include <sbi/riscv_encoding.h>
+#include <sbi/riscv_fp.h>
+#include <sbi/sbi_bitops.h>
+#include <sbi/sbi_csr_detect.h>
+#include <sbi/sbi_math.h>
+#include <sbi/sbi_pmu.h>
+#include <sbi/sbi_hfence.h>
+
+extern unsigned long hart_features_offset;
+
+
+
 /** Context representation for a hart within a domain */
 struct hart_context {
 	/** Trap-related states such as GPRs, mepc, and mstatus */
@@ -93,6 +108,15 @@ static void hart_context_set(struct sbi_domain *dom, u32 hartindex,
  * @param ctx pointer to the current HART context
  * @param dom_ctx pointer to the target domain context
  */
+
+// unsigned int sbi_hart_pmp_count(struct sbi_scratch *scratch)
+// {
+// 	struct sbi_hart_features *hfeatures =
+// 			sbi_scratch_offset_ptr(scratch, hart_features_offset);
+
+// 	return hfeatures->pmp_count;
+// }
+
 static void switch_to_next_domain_context(struct hart_context *ctx,
 					  struct hart_context *dom_ctx)
 {

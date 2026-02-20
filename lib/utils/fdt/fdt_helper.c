@@ -30,8 +30,11 @@
 #define DEFAULT_SIFIVE_UART_FREQ		0
 #define DEFAULT_SIFIVE_UART_BAUD		115200
 
-#define DEFAULT_SHAKTI_UART_FREQ		50000000
+#define DEFAULT_SHAKTI_UART_FREQ		100000000
 #define DEFAULT_SHAKTI_UART_BAUD		115200
+
+#define DEFAULT_MINDGROVE_UART_FREQ	100000000
+#define DEFAULT_MINDGROVE_UART_BAUD	12500000
 
 int fdt_parse_phandle_with_args(const void *fdt, int nodeoff,
 				const char *prop, const char *cells_prop,
@@ -547,6 +550,14 @@ int fdt_parse_shakti_uart_node(const void *fdt, int nodeoffset,
 	return fdt_parse_uart_node_common(fdt, nodeoffset, uart,
 					DEFAULT_SHAKTI_UART_FREQ,
 					DEFAULT_SHAKTI_UART_BAUD);
+}
+
+int fdt_parse_mindgrove_uart_node(const void *fdt, int nodeoffset,
+			       struct platform_uart_data *uart)
+{
+	return fdt_parse_uart_node_common(fdt, nodeoffset, uart,
+					DEFAULT_MINDGROVE_UART_FREQ,
+					DEFAULT_MINDGROVE_UART_BAUD);
 }
 
 int fdt_parse_sifive_uart_node(const void *fdt, int nodeoffset,

@@ -588,6 +588,24 @@ int sbi_hart_pmp_configure(struct sbi_scratch *scratch)
 	 * It is advisable to flush the caching structures under such
 	 * conditions.
 	 */
+
+	    /* Allow full MMIO region (debug bring-up) */
+	#define MMIO_BASE  0x00000000UL
+	#define MMIO_SIZE  0x90000000UL   /* everything below RAM */
+
+    // pmp_set(1, PMP_R | PMP_W,
+    //         MMIO_BASE,
+    //         MMIO_SIZE);
+	/* Allow MMIO below RAM */
+pmp_set(1, PMP_R | PMP_W,
+        0x00000000UL,
+        31); /* 2^31 = 0x80000000 */
+
+/* Allow PSRAM */
+pmp_set(2, PMP_R | PMP_W | PMP_X,
+        0x90000000UL,
+        23); /* 2^23 = 8MB */
+	
 	if (misa_extension('S')) {
 		__asm__ __volatile__("sfence.vma");
 
