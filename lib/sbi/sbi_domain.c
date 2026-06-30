@@ -25,6 +25,7 @@ static u32 domain_count = 0;
 static bool domain_finalized = false;
 
 #define ROOT_REGION_MAX	32
+static u32 root_memregs_count = 0;
 
 struct sbi_domain root = {
 	.name = "root",
@@ -121,102 +122,6 @@ void sbi_domain_memregion_init(unsigned long addr,
 	}
 }
 
-unsigned int sbi_domain_get_oldpmp_flags(struct sbi_domain_memregion *reg)
-{
-
-	unsigned int pmp_flags = 0;
-
-	/*
-	 * If permissions are to be enforced for all modes on
-	 * this region, the lock bit should be set.
-	 */
-	if (reg->flags & SBI_DOMAIN_MEMREGION_ENF_PERMISSIONS)
-		pmp_flags |= PMP_L;
-
-	if (reg->flags & SBI_DOMAIN_MEMREGION_SU_READABLE)
-		pmp_flags |= PMP_R;
-	if (reg->flags & SBI_DOMAIN_MEMREGION_SU_WRITABLE)
-		pmp_flags |= PMP_W;
-	if (reg->flags & SBI_DOMAIN_MEMREGION_SU_EXECUTABLE)
-		pmp_flags |= PMP_X;
-
-	return pmp_flags;
-}
-
-unsigned int sbi_domain_get_smepmp_flags(struct sbi_domain_memregion *reg)
-{
-	unsigned int pmp_flags = 0;
-	unsigned long rstart, rend;
-
-	if ((reg->flags & SBI_DOMAIN_MEMREGION_ACCESS_MASK) == 0) {
-		/*
-		 * Region is inaccessible in all privilege modes.
-		 *
-		 * SmePMP allows two encodings for an inaccessible region:
-		 *   - pmpcfg.LRWX = 0000 (Inaccessible region)
-		 *   - pmpcfg.LRWX = 1000 (Locked inaccessible region)
-		 * We use the first encoding here.
-		 */
-		return 0;
-	} else if (SBI_DOMAIN_MEMREGION_IS_SHARED(reg->flags)) {
-		/* Read only for both M and SU modes */
-		if (SBI_DOMAIN_MEMREGION_IS_SUR_MR(reg->flags))
-			pmp_flags = (PMP_L | PMP_R | PMP_W | PMP_X);
-
-		/* Execute for SU but Read/Execute for M mode */
-		else if (SBI_DOMAIN_MEMREGION_IS_SUX_MRX(reg->flags))
-			/* locked region */
-			pmp_flags = (PMP_L | PMP_W | PMP_X);
-
-		/* Execute only for both M and SU modes */
-		else if (SBI_DOMAIN_MEMREGION_IS_SUX_MX(reg->flags))
-			pmp_flags = (PMP_L | PMP_W);
-
-		/* Read/Write for both M and SU modes */
-		else if (SBI_DOMAIN_MEMREGION_IS_SURW_MRW(reg->flags))
-			pmp_flags = (PMP_W | PMP_X);
-
-		/* Read only for SU mode but Read/Write for M mode */
-		else if (SBI_DOMAIN_MEMREGION_IS_SUR_MRW(reg->flags))
-			pmp_flags = (PMP_W);
-	} else if (SBI_DOMAIN_MEMREGION_M_ONLY_ACCESS(reg->flags)) {
-		/*
-		 * When smepmp is supported and used, M region cannot have RWX
-		 * permissions on any region.
-		 */
-		if ((reg->flags & SBI_DOMAIN_MEMREGION_M_ACCESS_MASK)
-		    == SBI_DOMAIN_MEMREGION_M_RWX) {
-			sbi_printf("%s: M-mode only regions cannot have"
-				   "RWX permissions\n", __func__);
-			return 0;
-		}
-
-		/* M-mode only access regions are always locked */
-		pmp_flags |= PMP_L;
-
-		if (reg->flags & SBI_DOMAIN_MEMREGION_M_READABLE)
-			pmp_flags |= PMP_R;
-		if (reg->flags & SBI_DOMAIN_MEMREGION_M_WRITABLE)
-			pmp_flags |= PMP_W;
-		if (reg->flags & SBI_DOMAIN_MEMREGION_M_EXECUTABLE)
-			pmp_flags |= PMP_X;
-	} else if (SBI_DOMAIN_MEMREGION_SU_ONLY_ACCESS(reg->flags)) {
-		if (reg->flags & SBI_DOMAIN_MEMREGION_SU_READABLE)
-			pmp_flags |= PMP_R;
-		if (reg->flags & SBI_DOMAIN_MEMREGION_SU_WRITABLE)
-			pmp_flags |= PMP_W;
-		if (reg->flags & SBI_DOMAIN_MEMREGION_SU_EXECUTABLE)
-			pmp_flags |= PMP_X;
-	} else {
-		rstart = reg->base;
-		rend = (reg->order < __riscv_xlen) ? rstart + ((1UL << reg->order) - 1) : -1UL;
-		sbi_printf("%s: Unsupported Smepmp permissions on region 0x%"PRILX"-0x%"PRILX"\n",
-			   __func__, rstart, rend);
-	}
-
-	return pmp_flags;
-}
-
 bool sbi_domain_check_addr(const struct sbi_domain *dom,
 			   unsigned long addr, unsigned long mode,
 			   unsigned long access_flags)
@@ -257,11 +162,7 @@ bool sbi_domain_check_addr(const struct sbi_domain *dom,
 			rstart + ((1UL << reg->order) - 1) : -1UL;
 		if (rstart <= addr && addr <= rend) {
 			rmmio = (rflags & SBI_DOMAIN_MEMREGION_MMIO) ? true : false;
-			/*
-			 * MMIO devices may appear in regions without the flag set (such as the
-			 * default region), but MMIO device regions should not be used as memory.
-			 */
-			if (!mmio && rmmio)
+			if (mmio != rmmio)
 				return false;
 			return ((rrwx & rwx) == rwx) ? true : false;
 		}
@@ -285,12 +186,29 @@ static bool is_region_valid(const struct sbi_domain_memregion *reg)
 	return true;
 }
 
+/** Check if regionA is sub-region of regionB */
+static bool is_region_subset(const struct sbi_domain_memregion *regA,
+			     const struct sbi_domain_memregion *regB)
+{
+	ulong regA_start = regA->base;
+	ulong regA_end = regA->base + (BIT(regA->order) - 1);
+	ulong regB_start = regB->base;
+	ulong regB_end = regB->base + (BIT(regB->order) - 1);
+
+	if ((regB_start <= regA_start) &&
+	    (regA_start < regB_end) &&
+	    (regB_start < regA_end) &&
+	    (regA_end <= regB_end))
+		return true;
+
+	return false;
+}
+
 /** Check if regionA can be replaced by regionB */
 static bool is_region_compatible(const struct sbi_domain_memregion *regA,
 				 const struct sbi_domain_memregion *regB)
 {
-	if (sbi_domain_memregion_is_subset(regA, regB) &&
-	    regA->flags == regB->flags)
+	if (is_region_subset(regA, regB) && regA->flags == regB->flags)
 		return true;
 
 	return false;
@@ -300,19 +218,6 @@ static bool is_region_compatible(const struct sbi_domain_memregion *regA,
 static bool is_region_before(const struct sbi_domain_memregion *regA,
 			     const struct sbi_domain_memregion *regB)
 {
-	/*
-	 * Enforce firmware region ordering for memory access
-	 * under SmePMP.
-	 * Place firmware regions first to ensure consistent
-	 * PMP entries during domain context switches.
-	 */
-	if (SBI_DOMAIN_MEMREGION_IS_FIRMWARE(regA->flags) &&
-	   !SBI_DOMAIN_MEMREGION_IS_FIRMWARE(regB->flags))
-		return true;
-	if (!SBI_DOMAIN_MEMREGION_IS_FIRMWARE(regA->flags) &&
-	    SBI_DOMAIN_MEMREGION_IS_FIRMWARE(regB->flags))
-		return false;
-
 	if (regA->order < regB->order)
 		return true;
 
@@ -350,7 +255,7 @@ static const struct sbi_domain_memregion *find_next_subset_region(
 
 	sbi_domain_for_each_memregion(dom, sreg) {
 		if (sreg == reg || (sreg->base <= addr) ||
-		    !sbi_domain_memregion_is_subset(sreg, reg))
+		    !is_region_subset(sreg, reg))
 			continue;
 
 		if (!ret || (sreg->base < ret->base) ||
@@ -371,15 +276,9 @@ static void swap_region(struct sbi_domain_memregion* reg1,
 	sbi_memcpy(reg2, &treg, sizeof(treg));
 }
 
-static int sbi_domain_used_memregions(const struct sbi_domain *dom)
+static void clear_region(struct sbi_domain_memregion* reg)
 {
-	int count = 0;
-	struct sbi_domain_memregion *reg;
-
-	sbi_domain_for_each_memregion(dom, reg)
-		count++;
-
-	return count;
+	sbi_memset(reg, 0x0, sizeof(*reg));
 }
 
 static int sanitize_domain(struct sbi_domain *dom)
@@ -420,7 +319,9 @@ static int sanitize_domain(struct sbi_domain *dom)
 	}
 
 	/* Count memory regions */
-	count = sbi_domain_used_memregions(dom);
+	count = 0;
+	sbi_domain_for_each_memregion(dom, reg)
+		count++;
 
 	/* Check presence of firmware regions */
 	if (!dom->fw_region_inited) {
@@ -443,7 +344,7 @@ static int sanitize_domain(struct sbi_domain *dom)
 	}
 
 	/* Remove covered regions */
-	for (i = 0; i < (count - 1);) {
+	while(i < (count - 1)) {
 		is_covered = false;
 		reg = &dom->regions[i];
 
@@ -458,7 +359,10 @@ static int sanitize_domain(struct sbi_domain *dom)
 
 		/* find a region is superset of reg, remove reg */
 		if (is_covered) {
-			sbi_memmove(reg, reg + 1, sizeof(*reg) * (count - i));
+			for (j = i; j < (count - 1); j++)
+				swap_region(&dom->regions[j],
+					    &dom->regions[j + 1]);
+			clear_region(&dom->regions[count - 1]);
 			count--;
 		} else
 			i++;
@@ -560,8 +464,6 @@ void sbi_domain_dump(const struct sbi_domain *dom, const char *suffix)
 		sbi_printf("M: ");
 		if (reg->flags & SBI_DOMAIN_MEMREGION_MMIO)
 			sbi_printf("%cI", (k++) ? ',' : '(');
-		if (reg->flags & SBI_DOMAIN_MEMREGION_FW)
-			sbi_printf("%cF", (k++) ? ',' : '(');
 		if (reg->flags & SBI_DOMAIN_MEMREGION_M_READABLE)
 			sbi_printf("%cR", (k++) ? ',' : '(');
 		if (reg->flags & SBI_DOMAIN_MEMREGION_M_WRITABLE)
@@ -700,8 +602,7 @@ static int root_add_memregion(const struct sbi_domain_memregion *reg)
 {
 	int rc;
 	bool reg_merged;
-	struct sbi_domain_memregion *nreg, *nreg1;
-	int root_memregs_count = sbi_domain_used_memregions(&root);
+	struct sbi_domain_memregion *nreg, *nreg1, *nreg2;
 
 	/* Sanity checks */
 	if (!reg || domain_finalized || !root.regions ||
@@ -742,10 +643,12 @@ static int root_add_memregion(const struct sbi_domain_memregion *reg)
 			    (nreg->base + BIT(nreg->order)) == nreg1->base &&
 			    nreg->order == nreg1->order &&
 			    nreg->flags == nreg1->flags) {
-				int i1 = nreg1 - root.regions;
 				nreg->order++;
-				sbi_memmove(nreg1, nreg1 + 1,
-					    sizeof(*nreg1) * (root_memregs_count - i1));
+				while (nreg1->order) {
+					nreg2 = nreg1 + 1;
+					sbi_memcpy(nreg1, nreg2, sizeof(*nreg1));
+					nreg1++;
+				}
 				reg_merged = true;
 				root_memregs_count--;
 			}
@@ -870,7 +773,6 @@ int sbi_domain_init(struct sbi_scratch *scratch, u32 cold_hartid)
 	int rc;
 	struct sbi_hartmask *root_hmask;
 	struct sbi_domain_memregion *root_memregs;
-	int root_memregs_count = 0;
 
 	SBI_INIT_LIST_HEAD(&domain_list);
 
@@ -912,31 +814,32 @@ int sbi_domain_init(struct sbi_scratch *scratch, u32 cold_hartid)
 	}
 	root.possible_harts = root_hmask;
 
+	sbi_domain_memregion_init(0x00000000, 0x8000000,
+              (SBI_DOMAIN_MEMREGION_M_READABLE |
+               SBI_DOMAIN_MEMREGION_SU_READABLE |
+               SBI_DOMAIN_MEMREGION_M_WRITABLE |
+               SBI_DOMAIN_MEMREGION_SU_WRITABLE), 
+              &root_memregs[root_memregs_count++]);
+			  
 	/* Root domain firmware memory region */
-	if (sbi_platform_single_fw_region(sbi_platform_ptr(scratch))) {
-		sbi_domain_memregion_init(scratch->fw_start, scratch->fw_size,
-					  (SBI_DOMAIN_MEMREGION_M_READABLE |
-					   SBI_DOMAIN_MEMREGION_M_WRITABLE |
-					   SBI_DOMAIN_MEMREGION_M_EXECUTABLE |
-					   SBI_DOMAIN_MEMREGION_FW),
-					  &root_memregs[root_memregs_count++]);
-	} else {
-		sbi_domain_memregion_init(scratch->fw_start,
-					  scratch->fw_rw_offset,
-					  (SBI_DOMAIN_MEMREGION_M_READABLE |
-					   SBI_DOMAIN_MEMREGION_M_EXECUTABLE |
-					   SBI_DOMAIN_MEMREGION_FW),
-					  &root_memregs[root_memregs_count++]);
+	sbi_domain_memregion_init(scratch->fw_start, scratch->fw_rw_offset,
+				  (SBI_DOMAIN_MEMREGION_M_READABLE |
+				  SBI_DOMAIN_MEMREGION_SU_READABLE |
+				  SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				  SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				  SBI_DOMAIN_MEMREGION_SU_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);
 
-		sbi_domain_memregion_init((scratch->fw_start +
-					   scratch->fw_rw_offset),
-					  (scratch->fw_size -
-					   scratch->fw_rw_offset),
-					  (SBI_DOMAIN_MEMREGION_M_READABLE |
-					   SBI_DOMAIN_MEMREGION_M_WRITABLE |
-					   SBI_DOMAIN_MEMREGION_FW),
-					  &root_memregs[root_memregs_count++]);
-	}
+	sbi_domain_memregion_init((scratch->fw_start + scratch->fw_rw_offset),
+				  (scratch->fw_size - scratch->fw_rw_offset),
+				  (SBI_DOMAIN_MEMREGION_M_READABLE |
+				  SBI_DOMAIN_MEMREGION_SU_READABLE |
+				  SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);
 
 	root.fw_region_inited = true;
 
@@ -947,11 +850,41 @@ int sbi_domain_init(struct sbi_scratch *scratch, u32 cold_hartid)
 	 * have access to SU region while previous entries will allow
 	 * access to M-mode regions.
 	 */
+	// sbi_domain_memregion_init(0x00000000, 0x100000, // Covers 0x0 to 0x100000
+    //           (SBI_DOMAIN_MEMREGION_M_READABLE |
+    //            SBI_DOMAIN_MEMREGION_SU_READABLE |
+    //            SBI_DOMAIN_MEMREGION_M_WRITABLE |
+    //            SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+	// 		   SBI_DOMAIN_MEMREGION_MMIO),
+    //           &root_memregs[root_memregs_count++]);
+
 	sbi_domain_memregion_init(0, ~0UL,
 				  (SBI_DOMAIN_MEMREGION_SU_READABLE |
+				  SBI_DOMAIN_MEMREGION_M_READABLE |
 				   SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);
+
+	sbi_domain_memregion_init(0x90000000, 0x800000,
+				  (SBI_DOMAIN_MEMREGION_SU_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE |
 				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE),
 				  &root_memregs[root_memregs_count++]);
+
+	sbi_domain_memregion_init(0x80000000, 0x10000000,
+				  (SBI_DOMAIN_MEMREGION_SU_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);	
+
 
 	/* Root domain memory region end */
 	root_memregs[root_memregs_count].order = 0;

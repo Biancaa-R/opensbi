@@ -10,7 +10,17 @@
 # Select Make Options:
 # o  Do not use make's built-in rules
 # o  Do not print "Entering directory ...";
-MAKEFLAGS += -r --no-print-directory
+
+# CFLAGS += -DFW_TEXT_START=0x90000000 -DFW_PAYLOAD_ALIGN=0x100000
+# CFLAGS += -Og -ggdb
+# MAKEFLAGS += -r --no-print-directory
+# CROSS_COMPILE=riscv64-unknown-elf-
+# ARCH=riscv
+# CROSS_COMPILCFLAGS+=" -fPIE -mcmodel=medany"
+# LDFLAGS+=" -fPIE -pie -lgcc"
+# E_FLAGS="-march=rv64imac -mabi=lp64"
+# LDFLAGS += -lgcc
+
 
 # Readlink -f requires GNU readlink
 ifeq ($(shell uname -s),Darwin)
@@ -151,12 +161,6 @@ endif
 
 # Guess the compiler's XLEN
 OPENSBI_CC_XLEN := $(shell TMP=`$(CC) $(CLANG_TARGET) -dumpmachine | sed 's/riscv\([0-9][0-9]\).*/\1/'`; echo $${TMP})
-# If guessing XLEN fails, default to 64
-ifneq ($(OPENSBI_CC_XLEN),32)
-  ifneq ($(OPENSBI_CC_XLEN),64)
-    OPENSBI_CC_XLEN = 64
-  endif
-endif
 
 # Guess the compiler's ABI and ISA
 ifneq ($(CC_IS_CLANG),y)
@@ -209,9 +213,9 @@ CC_SUPPORT_ZICSR_ZIFENCEI := $(shell $(CC) $(CLANG_TARGET) $(RELAX_FLAG) -nostdl
 # Check whether the assembler and the compiler support the Vector extension
 CC_SUPPORT_VECTOR := $(shell $(CC) $(CLANG_TARGET) $(RELAX_FLAG) -nostdlib -march=rv$(OPENSBI_CC_XLEN)gv -dM -E -x c /dev/null 2>&1 | grep -q riscv.*vector && echo y || echo n)
 
-ifneq ($(OPENSBI_LD_PIE),y)
-$(error Your linker does not support creating PIEs, opensbi requires this.)
-endif
+# ifneq ($(OPENSBI_LD_PIE),y)
+# $(error Your linker does not support creating PIEs, opensbi requires this.)
+# endif
 
 # Build Info:
 # OPENSBI_BUILD_TIME_STAMP -- the compilation time stamp
@@ -377,10 +381,9 @@ GENFLAGS	+=	$(libsbiutils-genflags-y)
 GENFLAGS	+=	$(platform-genflags-y)
 GENFLAGS	+=	$(firmware-genflags-y)
 
-CFLAGS		=	-g -Wall -Werror -ffreestanding -nostdlib -fno-stack-protector -fno-strict-aliasing -ffunction-sections -fdata-sections
+CFLAGS		=	-g -Wall -ffreestanding -nostdlib -fno-stack-protector -fno-strict-aliasing -ffunction-sections -fdata-sections
 CFLAGS		+=	-fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS		+=	-fno-asynchronous-unwind-tables -fno-unwind-tables
-CFLAGS		+=	-std=gnu11
 CFLAGS		+=	$(REPRODUCIBLE_FLAGS)
 # Optionally supported flags
 ifeq ($(CC_SUPPORT_VECTOR),y)
@@ -430,7 +433,6 @@ ASFLAGS		+=	$(firmware-asflags-y)
 ARFLAGS		=	rcs
 
 ELFFLAGS	+=	$(USE_LD_FLAG)
-ELFFLAGS	+=	-Wl,--gc-sections
 ifeq ($(OPENSBI_LD_EXCLUDE_LIBS),y)
 ELFFLAGS	+=	-Wl,--exclude-libs,ALL
 endif
@@ -451,12 +453,9 @@ DTSCPPFLAGS	=	$(CPPFLAGS) -nostdinc -nostdlib -fno-builtin -D__DTS__ -x assemble
 
 ifneq ($(DEBUG),)
 CFLAGS		+=	-O0
+ELFFLAGS	+=	-Wl,--print-gc-sections
 else
 CFLAGS		+=	-O2
-endif
-
-ifeq ($(V), 1)
-ELFFLAGS	+=	-Wl,--print-gc-sections
 endif
 
 # Setup functions for compilation

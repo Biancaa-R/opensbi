@@ -17,18 +17,40 @@
 #include <sbi/sbi_string.h>
 #include <sbi/sbi_system.h>
 #include <sbi/sbi_tlb.h>
-#include <sbi_utils/cache/fdt_cmo_helper.h>
 #include <sbi_utils/fdt/fdt_domain.h>
 #include <sbi_utils/fdt/fdt_driver.h>
 #include <sbi_utils/fdt/fdt_fixup.h>
 #include <sbi_utils/fdt/fdt_helper.h>
 #include <sbi_utils/fdt/fdt_pmu.h>
+#include <sbi_utils/ipi/fdt_ipi.h>
 #include <sbi_utils/irqchip/fdt_irqchip.h>
 #include <sbi_utils/irqchip/imsic.h>
 #include <sbi_utils/mpxy/fdt_mpxy.h>
 #include <sbi_utils/serial/fdt_serial.h>
 #include <sbi_utils/serial/semihosting.h>
 #include <sbi_utils/timer/fdt_timer.h>
+
+#define PLATFORM_HART_COUNT   1
+
+#define PLATFORM_SCRATCH_SIZE  0x1000
+#define PLATFORM_SCRATCH_BASE  0x8001F000  // inside SRAM
+
+static struct sbi_domain_memregion memregions[] = {
+    {
+        .base = 0x90000000UL,
+        .order = 23, /* 8MB */
+        .flags = SBI_DOMAIN_MEMREGION_SU_READABLE |
+                 SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+                 SBI_DOMAIN_MEMREGION_SU_EXECUTABLE,
+    },
+    {
+        .base = 0x00000000UL,
+        .order = 31, /* MMIO */
+        .flags = SBI_DOMAIN_MEMREGION_SU_READABLE |
+                 SBI_DOMAIN_MEMREGION_SU_WRITABLE,
+    },
+};
+
 
 /* List of platform override modules generated at compile time */
 extern const struct fdt_driver *const platform_override_modules[];
@@ -231,7 +253,7 @@ int generic_early_init(bool cold_boot)
 		fdt_driver_init_all(fdt, fdt_early_drivers);
 	}
 
-	return fdt_cmo_init(cold_boot);
+	return 0;
 }
 
 int generic_final_init(bool cold_boot)
@@ -240,15 +262,16 @@ int generic_final_init(bool cold_boot)
 
 	if (!cold_boot)
 		return 0;
+    sbi_domain_root_add_memrange(0x90000000, 0x800000, 65536,
+                                 SBI_DOMAIN_MEMREGION_M_READABLE |
+                                 SBI_DOMAIN_MEMREGION_M_WRITABLE |
+                                 SBI_DOMAIN_MEMREGION_M_EXECUTABLE);
 
 	fdt_cpu_fixup(fdt);
 	fdt_fixups(fdt);
 	fdt_domain_fixup(fdt);
 
-	/* Set the empty space in FDT based on kconfig option */
 	fdt_pack(fdt);
-	fdt_open_into(fdt, fdt, fdt_totalsize(fdt) +
-		      CONFIG_PLATFORM_GENERIC_FDT_EMPTY_SPACE * 1024);
 
 	return 0;
 }
@@ -340,6 +363,7 @@ struct sbi_platform_operations generic_platform_ops = {
 	.extensions_init	= generic_extensions_init,
 	.domains_init		= generic_domains_init,
 	.irqchip_init		= fdt_irqchip_init,
+	.ipi_init		= fdt_ipi_init,
 	.pmu_init		= generic_pmu_init,
 	.pmu_xlate_to_mhpmevent = generic_pmu_xlate_to_mhpmevent,
 	.get_tlbr_flush_limit	= generic_tlbr_flush_limit,
@@ -348,16 +372,48 @@ struct sbi_platform_operations generic_platform_ops = {
 	.mpxy_init		= generic_mpxy_init,
 };
 
+#define PSRAM_BASE 0x90000000UL
+#define PSRAM_SIZE 0x00800000
+
 struct sbi_platform platform = {
 	.opensbi_version	= OPENSBI_VERSION,
 	.platform_version	=
-		SBI_PLATFORM_VERSION(CONFIG_PLATFORM_GENERIC_MAJOR_VER,
-				     CONFIG_PLATFORM_GENERIC_MINOR_VER),
-	.name			= CONFIG_PLATFORM_GENERIC_NAME,
-	.features		= SBI_PLATFORM_DEFAULT_FEATURES,
-	.hart_count		= SBI_HARTMASK_MAX_BITS,
+		SBI_PLATFORM_VERSION(0,1),
+	.name			= "MIndgrove secureIoT",
+	.hart_count		= 1,
 	.hart_index2id		= generic_hart_index2id,
 	.hart_stack_size	= SBI_PLATFORM_DEFAULT_HART_STACK_SIZE,
 	.heap_size		= SBI_PLATFORM_DEFAULT_HEAP_SIZE(0),
-	.platform_ops_addr	= (unsigned long)&generic_platform_ops
+	.platform_ops_addr	= (unsigned long)&generic_platform_ops,
+	.hart_stack_size = 0x4000,
 };
+
+// struct sbi_platform platform = {
+// 	.opensbi_version	= OPENSBI_VERSION,
+// 	.platform_version	=
+// 		SBI_PLATFORM_VERSION(CONFIG_PLATFORM_GENERIC_MAJOR_VER,
+// 				     CONFIG_PLATFORM_GENERIC_MINOR_VER),
+// 	.name			= CONFIG_PLATFORM_GENERIC_NAME,
+// 	.features		= SBI_PLATFORM_DEFAULT_FEATURES,
+// 	.hart_count		= SBI_HARTMASK_MAX_BITS,
+// 	.hart_index2id		= generic_hart_index2id,
+// 	.hart_stack_size	= SBI_PLATFORM_DEFAULT_HART_STACK_SIZE,
+// 	.heap_size		= SBI_PLATFORM_DEFAULT_HEAP_SIZE(0),
+// 	.platform_ops_addr	= (unsigned long)&generic_platform_ops
+// };
+
+#include <sbi_utils/serial/uart8250.h>
+
+// static struct uart8250 uart = {
+//     .addr = 0x11300,
+//     .freq = 50000000,
+//     .baudrate = 115200,
+//     .reg_shift = 0,
+//     .reg_width = 1,
+// };
+
+// void sbi_platform_console_init(void)
+// {
+//     uart8250_init(&uart);
+// }
+
