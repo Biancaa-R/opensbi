@@ -66,6 +66,9 @@ int fdt_parse_renesas_scif_node(const void *fdt, int nodeoffset,
 int fdt_parse_shakti_uart_node(const void *fdt, int nodeoffset,
 			       struct platform_uart_data *uart);
 
+int fdt_parse_mindgrove_uart_node(const void *fdt,int nodeoffset,
+				   struct platform_uart_data *uart);
+
 int fdt_parse_sifive_uart_node(const void *fdt, int nodeoffset,
 			       struct platform_uart_data *uart);
 

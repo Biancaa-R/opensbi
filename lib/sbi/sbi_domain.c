@@ -912,7 +912,22 @@ int sbi_domain_init(struct sbi_scratch *scratch, u32 cold_hartid)
 	}
 	root.possible_harts = root_hmask;
 
+	sbi_domain_memregion_init(0x00000000, 0x8000000,
+              (SBI_DOMAIN_MEMREGION_M_READABLE |
+               SBI_DOMAIN_MEMREGION_SU_READABLE |
+               SBI_DOMAIN_MEMREGION_M_WRITABLE |
+               SBI_DOMAIN_MEMREGION_SU_WRITABLE), 
+              &root_memregs[root_memregs_count++]);
+			  
 	/* Root domain firmware memory region */
+	sbi_domain_memregion_init(scratch->fw_start, scratch->fw_rw_offset,
+				  (SBI_DOMAIN_MEMREGION_M_READABLE |
+				  SBI_DOMAIN_MEMREGION_SU_READABLE |
+				  SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				  SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				  SBI_DOMAIN_MEMREGION_SU_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);
 	if (sbi_platform_single_fw_region(sbi_platform_ptr(scratch))) {
 		sbi_domain_memregion_init(scratch->fw_start, scratch->fw_size,
 					  (SBI_DOMAIN_MEMREGION_M_READABLE |
@@ -928,6 +943,15 @@ int sbi_domain_init(struct sbi_scratch *scratch, u32 cold_hartid)
 					   SBI_DOMAIN_MEMREGION_FW),
 					  &root_memregs[root_memregs_count++]);
 
+	sbi_domain_memregion_init((scratch->fw_start + scratch->fw_rw_offset),
+				  (scratch->fw_size - scratch->fw_rw_offset),
+				  (SBI_DOMAIN_MEMREGION_M_READABLE |
+				  SBI_DOMAIN_MEMREGION_SU_READABLE |
+				  SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);
 		sbi_domain_memregion_init((scratch->fw_start +
 					   scratch->fw_rw_offset),
 					  (scratch->fw_size -
@@ -947,11 +971,41 @@ int sbi_domain_init(struct sbi_scratch *scratch, u32 cold_hartid)
 	 * have access to SU region while previous entries will allow
 	 * access to M-mode regions.
 	 */
+	// sbi_domain_memregion_init(0x00000000, 0x100000, // Covers 0x0 to 0x100000
+    //           (SBI_DOMAIN_MEMREGION_M_READABLE |
+    //            SBI_DOMAIN_MEMREGION_SU_READABLE |
+    //            SBI_DOMAIN_MEMREGION_M_WRITABLE |
+    //            SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+	// 		   SBI_DOMAIN_MEMREGION_MMIO),
+    //           &root_memregs[root_memregs_count++]);
+
 	sbi_domain_memregion_init(0, ~0UL,
 				  (SBI_DOMAIN_MEMREGION_SU_READABLE |
+				  SBI_DOMAIN_MEMREGION_M_READABLE |
 				   SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);
+
+	sbi_domain_memregion_init(0x90000000, 0x800000,
+				  (SBI_DOMAIN_MEMREGION_SU_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE |
 				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE),
 				  &root_memregs[root_memregs_count++]);
+
+	sbi_domain_memregion_init(0x80000000, 0x10000000,
+				  (SBI_DOMAIN_MEMREGION_SU_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_READABLE |
+				   SBI_DOMAIN_MEMREGION_M_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_SU_WRITABLE |
+				   SBI_DOMAIN_MEMREGION_M_EXECUTABLE |
+				   SBI_DOMAIN_MEMREGION_SU_EXECUTABLE),
+				  &root_memregs[root_memregs_count++]);	
+
 
 	/* Root domain memory region end */
 	root_memregs[root_memregs_count].order = 0;

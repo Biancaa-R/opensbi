@@ -36,6 +36,8 @@
 #include <sbi/sbi_version.h>
 #include <sbi/sbi_unit_test.h>
 
+extern unsigned long hart_features_offset;
+
 #define BANNER                                              \
 	"   ____                    _____ ____ _____\n"     \
 	"  / __ \\                  / ____|  _ \\_   _|\n"  \
@@ -44,7 +46,8 @@
 	" | |__| | |_) |  __/ | | |____) | |_) || |_\n"     \
 	"  \\____/| .__/ \\___|_| |_|_____/|____/_____|\n"  \
 	"        | |\n"                                     \
-	"        |_|\n\n"
+	"        |_|\n\n"                                   \
+	"Life is hard \n"
 
 static void sbi_boot_print_banner(struct sbi_scratch *scratch)
 {
@@ -163,6 +166,14 @@ static void sbi_boot_print_domains(struct sbi_scratch *scratch)
 	/* Domain details */
 	sbi_domain_dump_all("        ");
 }
+
+// unsigned int sbi_hart_pmp_count(struct sbi_scratch *scratch)
+// {
+// 	struct sbi_hart_features *hfeatures =
+// 			sbi_scratch_offset_ptr(scratch, hart_features_offset);
+
+// 	return hfeatures->pmp_count;
+// }
 
 static void sbi_boot_print_hart(struct sbi_scratch *scratch, u32 hartid)
 {

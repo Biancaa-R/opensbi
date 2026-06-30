@@ -7,6 +7,11 @@
  *   Anup Patel <anup.patel@wdc.com>
  */
 
+/*
+FW_TEXT_START=0x80000000
+FW_PAYLOAD_ALIGN=0x81000000
+*/
+
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
